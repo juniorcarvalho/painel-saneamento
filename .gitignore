@@ -1,0 +1,17 @@
+# Python environment
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+
+# Local data cache
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Secrets and environment variables
+.env
+.env.*
