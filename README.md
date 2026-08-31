@@ -72,7 +72,6 @@ src/data_access.py                 Leitura, coleta e persistência do cache
 src/data_processing.py             Agregação urbana e priorização
 data/br_mdr_*.csv                  Base municipal de origem
 data/processed/*.json              Cache consolidado do dashboard
-tests/                              Testes automatizados
 docs/                               Contexto, escopo, dados e planos técnicos
 requirements.txt                   Dependências Python
 ```

@@ -100,7 +100,6 @@ gera recomendações textuais por IA.
 - Cache JSON consolidado por UF e ano.
 - Ranking determinístico com os componentes do cálculo visíveis.
 - Tabela e download dos dados filtrados.
-- Testes automatizados para processamento, cache e compilação da aplicação.
 
 ## Indicadores de uso
 
