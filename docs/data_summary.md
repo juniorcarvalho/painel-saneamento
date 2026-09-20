@@ -133,3 +133,30 @@ streamlit run app.py
 um endpoint SNIS configurado por `SNIS_API_URL`. Essas funções não fazem parte
 do fluxo principal atual, não substituem o processamento do CSV e exigem que
 as respostas estejam no formato tabular esperado pelo adaptador.
+
+## 8. Extração web de municípios
+
+Como fonte secundária, o projeto utiliza a página
+[Lista de municípios do Brasil](https://pt.wikipedia.org/wiki/Lista_de_munic%C3%ADpios_do_Brasil).
+A rotina `coletar_municipios_wikipedia` baixa o HTML com uma requisição
+identificada, percorre todas as tabelas alfabéticas com Beautiful Soup,
+normaliza município e UF e associa o nome do estado. Registros vazios são
+descartados e duplicidades por município/UF são removidas. O código IBGE é
+descartado porque não está disponível nessa listagem da Wikipédia.
+
+O resultado é salvo em
+`data/processed/municipios_brasil_wikipedia.csv` por meio de uma execução
+explícita (`SCRAPE_MUNICIPIOS=1 python src/data_access.py`). O dashboard lê
+somente esse CSV local, apresentando tabela, busca e frequência das palavras dos
+nomes municipais. A fonte pode mudar de estrutura ou ficar indisponível; por
+isso a extração não é executada durante a navegação e a ausência do arquivo é
+sinalizada na interface.
+
+## 9. Upload e estado da sessão
+
+O upload aceita CSVs consolidados ou arquivos municipais SNIS com as colunas
+mínimas documentadas no painel. O conteúdo é validado, mantido em
+`st.session_state["upload_registros"]` e disponibilizado para consulta e
+download sem alterar o cache JSON oficial. `st.cache_data` é usado para
+reutilizar o cache processado e a referência territorial entre reruns do
+Streamlit.

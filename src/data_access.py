@@ -10,8 +10,11 @@ import json
 import os
 import csv
 import urllib.request
+import re
 from pathlib import Path
 from typing import Any
+
+from bs4 import BeautifulSoup
 
 try:
     from src.data_processing import consolidar_dados_api, consolidar_dados_urbanos
@@ -22,6 +25,17 @@ except ModuleNotFoundError:
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROCESSED_PATH = PROJECT_ROOT / "data" / "processed" / "dados_saneamento.json"
 MUNICIPAL_CSV_PATH = PROJECT_ROOT / "data" / "br_mdr_snis_municipio_agua_esgoto.csv"
+MUNICIPIOS_WEB_PATH = PROJECT_ROOT / "data" / "processed" / "municipios_brasil_wikipedia.csv"
+MUNICIPIOS_WEB_URL = "https://pt.wikipedia.org/wiki/Lista_de_munic%C3%ADpios_do_Brasil"
+ESTADO_POR_UF = {
+    "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas",
+    "BA": "Bahia", "CE": "Ceará", "DF": "Distrito Federal", "ES": "Espírito Santo",
+    "GO": "Goiás", "MA": "Maranhão", "MT": "Mato Grosso", "MS": "Mato Grosso do Sul",
+    "MG": "Minas Gerais", "PA": "Pará", "PB": "Paraíba", "PR": "Paraná",
+    "PE": "Pernambuco", "PI": "Piauí", "RJ": "Rio de Janeiro", "RN": "Rio Grande do Norte",
+    "RS": "Rio Grande do Sul", "RO": "Rondônia", "RR": "Roraima", "SC": "Santa Catarina",
+    "SP": "São Paulo", "SE": "Sergipe", "TO": "Tocantins",
+}
 IBGE_POPULATION_URL = (
     "https://servicodados.ibge.gov.br/api/v3/agregados/1461/periodos/2010/"
     "variaveis/93?localidades=N3[all]"
@@ -34,6 +48,99 @@ def _get_json(url: str, timeout: int = 15) -> Any:
         if response.status != 200:
             raise RuntimeError(f"API retornou HTTP {response.status}: {url}")
         return json.loads(response.read().decode("utf-8"))
+
+
+def _get_text(url: str, timeout: int = 30) -> str:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": "SaneamentoEmFoco/1.0 (educational project)",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        if response.status != 200:
+            raise RuntimeError(f"Página retornou HTTP {response.status}: {url}")
+        return response.read().decode("utf-8", errors="replace")
+
+
+def _normalizar_texto(value: Any) -> str:
+    return " ".join(str(value or "").replace("\xa0", " ").split())
+
+
+def _normalizar_uf(value: Any) -> str:
+    return _normalizar_texto(value).upper().strip("()[]")
+
+
+def extrair_municipios_wikipedia(html: str) -> list[dict[str, str]]:
+    """Extrai todos os municípios listados na página, agrupados por UF."""
+
+    soup = BeautifulSoup(html, "html.parser")
+    registros: list[dict[str, str]] = []
+    # A página distribui os municípios em tabelas por faixa alfabética. As
+    # tabelas seguintes não possuem a classe ``sortable``, portanto todas as
+    # tabelas são percorridas e apenas links com o sufixo ``(UF)`` são aceitos.
+    for table in soup.select("table"):
+        for link in table.select("a[title]"):
+            texto = _normalizar_texto(
+                f"{link.get_text(' ', strip=True)} {link.next_sibling or ''}"
+            )
+            match = re.match(r"^(.*?)\s*\(([A-Z]{2})\)$", texto)
+            if not match:
+                continue
+            municipio, uf = match.groups()
+            registros.append(
+                {
+                    "municipio": municipio,
+                    "uf": uf,
+                    "estado": ESTADO_POR_UF.get(uf, ""),
+                }
+            )
+
+    unicos: dict[tuple[str, str], dict[str, str]] = {}
+    for registro in registros:
+        chave = (registro["municipio"].casefold(), registro["uf"])
+        unicos[chave] = registro
+    return sorted(unicos.values(), key=lambda item: (item["uf"], item["municipio"]))
+
+
+def coletar_municipios_wikipedia(url: str = MUNICIPIOS_WEB_URL) -> list[dict[str, str]]:
+    """Baixa e normaliza a lista de municípios da fonte web configurada."""
+
+    registros = extrair_municipios_wikipedia(_get_text(url))
+    if not registros:
+        raise ValueError("Nenhum município foi encontrado nas tabelas da Wikipédia.")
+    return registros
+
+
+def salvar_municipios_web(
+    registros: list[dict[str, str]], path: Path = MUNICIPIOS_WEB_PATH
+) -> Path:
+    """Persiste a extração web em CSV UTF-8 para uso offline no dashboard."""
+
+    campos = ("municipio", "uf", "estado")
+    validos = [
+        {campo: _normalizar_texto(item.get(campo, "")) for campo in campos}
+        for item in registros
+        if _normalizar_texto(item.get("municipio")) and _normalizar_uf(item.get("uf"))
+    ]
+    if not validos:
+        raise ValueError("A extração web não contém registros válidos.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=campos)
+        writer.writeheader()
+        writer.writerows(validos)
+    return path
+
+
+def carregar_municipios_web(path: Path = MUNICIPIOS_WEB_PATH) -> list[dict[str, str]]:
+    """Carrega o CSV da extração web sem fazer chamadas de rede."""
+
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        return list(csv.DictReader(file))
 
 
 def coletar_dados_ibge_populacao(url: str = IBGE_POPULATION_URL) -> Any:
@@ -115,7 +222,9 @@ def processar_e_salvar_dados() -> Path:
 
 
 if __name__ == "__main__":
-    if MUNICIPAL_CSV_PATH.exists():
+    if os.getenv("SCRAPE_MUNICIPIOS") == "1":
+        print(salvar_municipios_web(coletar_municipios_wikipedia()))
+    elif MUNICIPAL_CSV_PATH.exists():
         print(processar_csv_local())
     else:
         print(processar_e_salvar_dados())
