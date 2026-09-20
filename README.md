@@ -74,9 +74,7 @@ SCRAPE_MUNICIPIOS=1 python src/data_access.py
 ```
 
 O CSV contém `municipio`, `uf` e `estado`. A página apresenta a listagem em
-várias tabelas por faixa alfabética; o extrator percorre todas elas. O código
-IBGE não faz parte do arquivo porque não está disponível nessa listagem da
-Wikipédia.
+várias tabelas por faixa alfabética; o extrator percorre todas elas. 
 
 O painel também permite enviar um CSV complementar pela barra lateral. O
 arquivo é validado, mantido em `st.session_state` e pode ser baixado novamente;
