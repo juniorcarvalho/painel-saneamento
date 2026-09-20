@@ -12,6 +12,8 @@ https://basedosdados.org/dataset/2a543ad8-3cdb-4047-9498-efe7fb8ed697?table=df7c
 - Arquivo CSV municipal do SNIS em:
   `data/br_mdr_snis_municipio_agua_esgoto.csv`.
 
+## github: https://github.com/juniorcarvalho/painel-saneamento
+
 ## Configuração
 
 Na raiz do projeto, crie ou ative o ambiente virtual:
@@ -26,10 +28,6 @@ Instale as dependências:
 ```bash
 python -m pip install -r requirements.txt
 ```
-
-O projeto não utiliza Pandas diretamente na camada de processamento. O arquivo
-CSV é lido com a biblioteca padrão `csv`, e o dashboard utiliza as estruturas
-de dados Python e os componentes nativos do Streamlit.
 
 ## Atualização dos dados
 
@@ -64,6 +62,25 @@ Com o ambiente virtual ativo e o cache gerado, execute:
 ```bash
 streamlit run app.py
 ```
+
+## Extração da referência municipal
+
+A lista de municípios da Wikipédia é coletada separadamente e persistida em
+`data/processed/municipios_brasil_wikipedia.csv`. Assim, o painel permanece
+offline durante a navegação:
+
+```bash
+SCRAPE_MUNICIPIOS=1 python src/data_access.py
+```
+
+O CSV contém `municipio`, `uf` e `estado`. A página apresenta a listagem em
+várias tabelas por faixa alfabética; o extrator percorre todas elas. O código
+IBGE não faz parte do arquivo porque não está disponível nessa listagem da
+Wikipédia.
+
+O painel também permite enviar um CSV complementar pela barra lateral. O
+arquivo é validado, mantido em `st.session_state` e pode ser baixado novamente;
+ele não sobrescreve o cache oficial.
 ## Organização dos arquivos
 
 ```text

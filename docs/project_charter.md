@@ -141,3 +141,24 @@ navegação. A atualização principal usa o CSV local.
 Mitigação: converter valores com validação, rejeitar valores negativos ou
 inválidos e calcular os percentuais por soma ponderada, evitando médias
 municipais simples.
+
+# 9. Evolução TP2 e governança
+
+O TP2 amplia o produto do TP1 sem alterar a fonte oficial nem a regra de
+priorização. A camada de dados continua separada da interface: a atualização
+do cache JSON e a extração web são tarefas explícitas de preparação, enquanto
+o Streamlit navega apenas por arquivos locais.
+
+Stakeholders adicionais são estudantes e professores que avaliam
+reprodutibilidade, além de analistas que precisam consultar referências
+municipais. A Wikipédia é uma fonte contextual, não substitui o SNIS e não
+participa do cálculo do score. A listagem municipal fornece município, UF e
+estado, mas não código IBGE; por isso esse campo não é esperado no artefato.
+A origem, data de coleta e limitações devem ser registradas quando o CSV for
+atualizado.
+
+As entregas do TP2 incluem filtros reativos, estado de sessão, cache de dados,
+upload/download de CSV, referência territorial extraída com Beautiful Soup e
+relatórios atualizados. A organização permanece compatível com CRISP-DM:
+entendimento do negócio, preparação e governança dos dados, modelagem dos
+indicadores, avaliação por validações e disponibilização no dashboard.

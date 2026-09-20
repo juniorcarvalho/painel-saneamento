@@ -3,7 +3,12 @@ import io
 
 import streamlit as st
 
-from src.data_access import PROCESSED_PATH, carregar_dados_processados
+from src.data_access import (
+    MUNICIPIOS_WEB_PATH,
+    PROCESSED_PATH,
+    carregar_dados_processados,
+    carregar_municipios_web,
+)
 from src.data_processing import calcular_prioridade
 
 
@@ -18,6 +23,31 @@ st.set_page_config(
 def carregar_registros():
     payload = carregar_dados_processados()
     return calcular_prioridade(payload["registros"]), payload.get("fontes", [])
+
+
+@st.cache_data
+def carregar_referencia_municipios():
+    return carregar_municipios_web()
+
+
+def ler_upload(uploaded_file):
+    if uploaded_file is None:
+        return []
+    try:
+        registros = list(csv.DictReader(io.StringIO(uploaded_file.getvalue().decode("utf-8-sig"))))
+    except UnicodeDecodeError as exc:
+        raise ValueError("O CSV deve estar codificado em UTF-8.") from exc
+    if not registros:
+        raise ValueError("O CSV enviado não contém registros.")
+    campos = set(registros[0])
+    campos_consolidados = {"Ano", "UF", "Regiao", "Atendimento_Agua", "Atendimento_Esgoto"}
+    campos_municipais = {"ano", "sigla_uf", "populacao_urbana_residente_agua"}
+    if not campos_consolidados.issubset(campos) and not campos_municipais.issubset(campos):
+        raise ValueError(
+            "O CSV deve conter as colunas consolidadas (Ano, UF, Regiao, "
+            "Atendimento_Agua, Atendimento_Esgoto) ou a estrutura municipal SNIS."
+        )
+    return registros
 
 
 def csv_bytes(registros):
@@ -55,6 +85,25 @@ with tab1:
     st.write("Os dados são carregados exclusivamente do cache processado local.")
 
     st.sidebar.header("Filtros")
+    uploaded_file = st.sidebar.file_uploader("Adicionar CSV complementar", type=["csv"])
+    if uploaded_file is not None:
+        try:
+            st.session_state["upload_registros"] = ler_upload(uploaded_file)
+        except ValueError as exc:
+            st.sidebar.error(str(exc))
+    upload_registros = st.session_state.get("upload_registros", [])
+    if upload_registros:
+        st.sidebar.success(f"{len(upload_registros)} registros complementares carregados.")
+        with st.expander("Dados complementares carregados"):
+            st.dataframe(upload_registros[:1000], width="stretch", hide_index=True)
+            st.download_button(
+                "Baixar CSV complementar",
+                data=csv_bytes(upload_registros),
+                file_name="dados_complementares.csv",
+                mime="text/csv",
+                key="download_complementar",
+            )
+
     anos = sorted({item["Ano"] for item in registros}, reverse=True)
     ano = st.sidebar.selectbox("Ano", anos)
     registros_ano = [item for item in registros if item["Ano"] == ano]
@@ -147,3 +196,29 @@ with tab3:
         "A atualização das APIs é executada separadamente por `src/data_access.py`. "
         "O dashboard não depende de rede durante a navegação."
     )
+
+with st.expander("Referência territorial extraída da Wikipédia"):
+    municipios = carregar_referencia_municipios()
+    if not municipios:
+        st.warning(
+            f"Arquivo de referência não encontrado em {MUNICIPIOS_WEB_PATH}. "
+            "Execute `SCRAPE_MUNICIPIOS=1 python src/data_access.py` para atualizar."
+        )
+    else:
+        st.write(f"{len(municipios):,} municípios disponíveis no cache web.".replace(",", "."))
+        busca = st.text_input("Buscar município ou UF", key="busca_municipio")
+        encontrados = [
+            item for item in municipios
+            if not busca
+            or busca.casefold() in item.get("municipio", "").casefold()
+            or busca.casefold() == item.get("uf", "").casefold()
+        ]
+        st.dataframe(encontrados[:1000], width="stretch", hide_index=True)
+        palavras = {}
+        for item in encontrados:
+            for palavra in item.get("municipio", "").casefold().split():
+                if len(palavra) > 2:
+                    palavras[palavra] = palavras.get(palavra, 0) + 1
+        if palavras:
+            st.markdown("#### Frequência de palavras nos municípios")
+            st.bar_chart(dict(sorted(palavras.items(), key=lambda pair: pair[1], reverse=True)[:20]))
