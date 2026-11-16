@@ -267,3 +267,39 @@ sete campos de entrada são enviados; score e origem são recalculados.
 ## Uso de LLM
 
 Codex modelo Sol 6.1 para revisao do código e geração da documentação
+
+## Resumo com IA local
+
+A quarta página, **Resumo com IA local**, usa Qwen3-0.6B via POST `/processar_texto`.
+É independente do uso de Codex no desenvolvimento e não altera o ranking.
+
+```sh
+make setup
+make download-model  # requer internet apenas na preparação
+make dev
+make test             # testes com modelos falsos, sem download
+.venv/bin/python scripts/verificar_llm.py  # avaliação real offline
+```
+
+Python 3.14.2 teve instalação e testes verificados. `PYTHON` e `VENV` configuram
+um ambiente novo no Makefile (ex.: `make setup PYTHON=python3.12 VENV=.venv312`).
+Use um único worker da API. Pesos ficam em `models/qwen3-0.6b/`, fora do Git.
+`SANEAMENTO_LLM_PATH` muda esse diretório; `SANEAMENTO_LLM_TIMEOUT_SECONDS`
+(padrão 120, intervalo 1–3600) e `SANEAMENTO_LLM_MAX_INPUT_TOKENS`
+(padrão 2048, intervalo 128–8192) configuram limites. Configure o mesmo prazo
+na API e no Streamlit; o cliente adiciona 15 segundos ao timeout.
+
+```sh
+curl http://127.0.0.1:8000/processar_texto -H 'Content-Type: application/json' \
+  -d '{"texto":"Em 2021, a cidade ampliou a rede de água para 200 famílias.","fonte":{"titulo":"Exemplo","origem":"Documento local"}}'
+```
+
+A fonte exige apenas título e origem. Esses metadados são preservados na resposta.
+
+A resposta contém `texto_processado`, `tipo_analise`, `resultado`, `modelo`,
+`revisao`, `fonte` e `tempo_processamento_ms`. Erros usam `detail`: 422 para
+entrada inválida, 503 para modelo ausente/ocupado, 504 para prazo excedido e
+500 para falha interna. Modelo ausente não impede acesso a `/dados`.
+O startup não baixa arquivos e usa `HF_HUB_OFFLINE=1`. Textos e resumos não
+são gravados pelo servidor; o último resultado permanece na sessão da interface.
+Veja [configuração e avaliação](docs/llm_local.md).

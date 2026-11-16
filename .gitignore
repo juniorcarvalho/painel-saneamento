@@ -17,3 +17,6 @@ data/processed/*
 .env.*
 
 entrega-pdf/
+
+models/
+.pytest_cache/

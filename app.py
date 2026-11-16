@@ -7,6 +7,7 @@ st.caption("Priorização de investimentos em saneamento urbano por Unidade Fede
 pagina = st.navigation([
     st.Page("pages/exploracao.py", title="Exploração e ranking", default=True),
     st.Page("pages/dados.py", title="Consulta e importação"),
+    st.Page("pages/resumo.py", title="Resumo com IA local"),
     st.Page("pages/metodologia.py", title="Metodologia e fontes"),
 ])
 pagina.run()

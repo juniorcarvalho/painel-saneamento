@@ -1,0 +1,23 @@
+[
+  {
+    "texto": "Em 2021, o município fictício de Vila Clara ampliou a rede de água para 200 famílias. A obra terminou em 15 de dezembro de 2021.",
+    "fonte": {
+      "titulo": "Caso sintético 1",
+      "origem": "Fixture autoral, sem dados oficiais"
+    }
+  },
+  {
+    "texto": "Em 2022, Vila Clara iniciou a construção de 3 estações de tratamento de esgoto. Duas foram concluídas em 2023; a terceira segue em obras.",
+    "fonte": {
+      "titulo": "Caso sintético 2",
+      "origem": "Fixture autoral, sem dados oficiais"
+    }
+  },
+  {
+    "texto": "O relatório de 2024 de Vila Clara registra 80% de cobertura de água e 60% de esgoto. Os números são fictícios e servem apenas para testar resumos.",
+    "fonte": {
+      "titulo": "Caso sintético 3",
+      "origem": "Fixture autoral, sem dados oficiais"
+    }
+  }
+]

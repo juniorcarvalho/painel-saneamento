@@ -217,3 +217,7 @@ complementares corrompidos e sobreposição de lotes. As mitigações são mensa
 na interface, erros HTTP documentados, gravação atômica e filtros por origem.
 A avaliação técnica inclui consultas filtradas, importação válida e inválida,
 preservação do cache oficial e navegação com API indisponível.
+
+
+## TP4 — resumo local
+Textos de saneamento são fornecidos pelo usuário com título e origem declarados. Qwen3-0.6B gera resumos sem persistência de textos ou respostas no servidor. Limites padrão: 50–8000 caracteres, 2048 tokens de prompt e 256 tokens novos. A fonte não é consultada automaticamente. Os indicadores e o score determinístico permanecem independentes do resumo.

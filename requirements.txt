@@ -2,3 +2,10 @@ streamlit==1.54.0
 beautifulsoup4==4.14.3
 fastapi==0.149.0
 uvicorn==0.54.0
+pydantic==2.12.5
+transformers==4.57.6
+huggingface_hub==0.36.2
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.10.0+cpu
+pytest==9.0.2
+httpx==0.28.1

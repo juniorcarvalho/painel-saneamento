@@ -245,3 +245,7 @@ com citações e critérios de fidelidade. Este TP3 apresenta essa preparação 
 metodologia e não adiciona inferência, recomendações automáticas ou provedor.
 Beautiful Soup é mantido para a fonte HTML estática; Selenium só se justifica
 com uma fonte necessária que dependa de interação ou carregamento dinâmico.
+
+
+## TP4 — resumo local
+Textos de saneamento são fornecidos pelo usuário com título e origem declarados. Qwen3-0.6B gera resumos sem persistência de textos ou respostas no servidor. Limites padrão: 50–8000 caracteres, 2048 tokens de prompt e 256 tokens novos. A fonte não é consultada automaticamente. Os indicadores e o score determinístico permanecem independentes do resumo.
