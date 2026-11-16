@@ -1,6 +1,8 @@
 """API local de consulta e importação de indicadores consolidados."""
 
 import logging
+import time
+from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -8,6 +10,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.llm_schemas import TextoEntrada, TextoResposta
+from src.llm_service import (
+    EntradaLonga,
+    Indisponivel,
+    Ocupado,
+    ServicoResumoLocal,
+    TempoExcedido,
+)
 from src.api_data_access import adicionar_dados_complementares, carregar_dados_complementares
 from src.data_access import carregar_dados_processados
 from src.data_processing import calcular_prioridade, normalizar_registros
@@ -47,7 +57,23 @@ class DadosResposta(BaseModel):
     registros: list[RegistroSaida]
 
 
-app = FastAPI(title="Saneamento em Foco", version="3.0.0", description="Consulta de indicadores urbanos e importação complementar, com proveniência explícita.")
+@asynccontextmanager
+async def lifespan(app):
+    app.state.llm = None
+    try:
+        servico = ServicoResumoLocal()
+        servico.carregar()
+        app.state.llm = servico
+    except Exception:
+        logger.exception("Modelo local indisponível no carregamento")
+    try:
+        yield
+    finally:
+        if app.state.llm is not None:
+            app.state.llm.fechar()
+
+
+app = FastAPI(lifespan=lifespan, title="Saneamento em Foco", version="3.0.0", description="Consulta de indicadores urbanos e importação complementar, com proveniência explícita.")
 
 
 @app.exception_handler(RequestValidationError)
@@ -96,3 +122,45 @@ def importar_dados(registros: Annotated[list[RegistroEntrada], Body(min_length=1
         logger.exception("Falha ao persistir dados complementares")
         raise HTTPException(500, "Não foi possível persistir o lote complementar; verifique formato e permissões.") from exc
     return {"fontes": ["Importação complementar via API"], "registros": novos}
+
+
+@app.post(
+    "/processar_texto",
+    response_model=TextoResposta,
+    responses={
+        422: {"description": "Entrada inválida"},
+        503: {"description": "Modelo indisponível ou ocupado"},
+        504: {"description": "Prazo excedido"},
+        500: {"description": "Falha interna"},
+    },
+)
+def processar_texto(entrada: TextoEntrada):
+    inicio = time.monotonic()
+    try:
+        servico = getattr(app.state, "llm", None)
+        if servico is None:
+            raise Indisponivel(
+                "Modelo indisponível. Execute make download-model e reinicie a API."
+            )
+        resultado = servico.resumir(entrada.texto)
+        return TextoResposta(
+            texto_processado=entrada.texto,
+            resultado=resultado,
+            fonte=entrada.fonte,
+            modelo=servico.modelo,
+            revisao=servico.revisao,
+            tempo_processamento_ms=int((time.monotonic() - inicio) * 1000),
+        )
+    except (Indisponivel, Ocupado) as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except EntradaLonga as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except TempoExcedido as exc:
+        raise HTTPException(504, str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Falha interna na inferência")
+        raise HTTPException(500, "Falha interna ao gerar resumo.") from exc
+    finally:
+        logger.info("Processamento de resumo encerrado em %.3fs", time.monotonic() - inicio)

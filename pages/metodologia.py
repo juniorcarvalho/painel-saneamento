@@ -21,8 +21,8 @@ st.markdown(
 st.info("A navegação consulta os indicadores na API local. A preparação do SNIS e a coleta da Wikipédia são executadas separadamente. Os dados complementares têm origem e data de importação próprias e não substituem registros oficiais.")
 st.write("Beautiful Soup é suficiente para o HTML estático da referência municipal. Selenium só será reavaliado se uma nova fonte exigir interação ou carregamento dinâmico.")
 
-st.subheader("Preparação para LLMs")
-st.write("Os dados atuais são tabulares e não oferecem conteúdo textual adequado para resumo, análise de sentimento ou perguntas e respostas. Uma etapa futura exigirá documentos de saneamento com fonte, data, licença e contexto territorial, além de limpeza, segmentação e associação aos indicadores por UF e ano. A avaliação deverá verificar citações, fidelidade às fontes e proteção de informações sensíveis. Este TP3 não executa inferência nem gera recomendações por IA.")
+st.subheader("Resumo com LLM local")
+st.write("O Qwen3-0.6B resume textos fornecidos pelo usuário, com proveniência declarada. O limite inicial é 50–8000 caracteres e 2048 tokens no prompt completo. Textos e resumos não são persistidos pelo servidor. A saída pode conter erros e deve ser comparada ao original; não constitui indicador oficial nem altera o score determinístico.")
 
 with st.expander("Referência territorial extraída da Wikipédia"):
     try:

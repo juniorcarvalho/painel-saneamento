@@ -54,3 +54,10 @@ data: setup
 
 scrape: setup
 	SCRAPE_MUNICIPIOS=1 "$(ENV_PYTHON)" src/data_access.py
+
+.PHONY: download-model test
+download-model: setup
+	"$(ENV_PYTHON)" scripts/baixar_modelo.py
+
+test: setup
+	"$(ENV_PYTHON)" -m pytest -q
