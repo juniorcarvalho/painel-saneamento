@@ -85,3 +85,26 @@ def test_concorrencia_mantem_trava_ate_terminar():
             terminar.set()
         assert trabalho.result(timeout=5) == 'Resumo válido'
     assert not s.lock.locked()
+
+
+def test_catalogo_e_resolucao_de_modelos(monkeypatch, tmp_path):
+    from src.llm_config import CANDIDATO_MODELO, CANDIDATO_REVISAO, MODELO, REVISAO, resolver_modelo
+
+    m, r, p = resolver_modelo()
+    assert (m, r) == (MODELO, REVISAO)
+    assert p.name == 'qwen3-0.6b'
+
+    m2, r2, p2 = resolver_modelo(CANDIDATO_MODELO)
+    assert (m2, r2) == (CANDIDATO_MODELO, CANDIDATO_REVISAO)
+    assert p2.name == 'qwen2.5-1.5b-instruct'
+
+    s = ServicoResumoLocal(modelo=CANDIDATO_MODELO, path=tmp_path)
+    assert s.modelo == CANDIDATO_MODELO
+    assert s.revisao == CANDIDATO_REVISAO
+    assert s.path == tmp_path
+    (tmp_path / 'manifesto.json').write_text('{"modelo": "outro", "revisao": "123"}')
+    with pytest.raises(ValueError, match='Manifesto incompatível'):
+        s.carregar()
+
+    with pytest.raises(ValueError, match='Modelo não suportado'):
+        resolver_modelo('Modelo/Inexistente')

@@ -17,7 +17,7 @@ from transformers import (
     StoppingCriteriaList,
 )
 
-from src.llm_config import MODELO, PADRAO_PATH, REVISAO, opcao
+from src.llm_config import MODELO, PADRAO_PATH, REVISAO, opcao, resolver_modelo
 
 
 class Indisponivel(RuntimeError):
@@ -40,8 +40,14 @@ class ServicoResumoLocal:
     modelo = MODELO
     revisao = REVISAO
 
-    def __init__(self):
-        self.path = Path(os.getenv("SANEAMENTO_LLM_PATH", str(PADRAO_PATH)))
+    def __init__(self, modelo=None, revisao=None, path=None):
+        if modelo is None and revisao is None and path is None:
+            self.modelo, self.revisao, self.path = resolver_modelo()
+        else:
+            padrao_modelo, padrao_revisao, padrao_path = resolver_modelo(modelo)
+            self.modelo = modelo or padrao_modelo
+            self.revisao = revisao or padrao_revisao
+            self.path = Path(path) if path is not None else padrao_path
         self.timeout = opcao("SANEAMENTO_LLM_TIMEOUT_SECONDS", 120, 1, 3600)
         self.max_tokens = opcao("SANEAMENTO_LLM_MAX_INPUT_TOKENS", 2048, 128, 8192)
         self.lock = Lock()
@@ -50,7 +56,7 @@ class ServicoResumoLocal:
     def carregar(self):
         os.environ["HF_HUB_OFFLINE"] = "1"
         manifesto = json.loads((self.path / "manifesto.json").read_text())
-        if manifesto.get("modelo") != MODELO or manifesto.get("revisao") != REVISAO:
+        if manifesto.get("modelo") != self.modelo or manifesto.get("revisao") != self.revisao:
             raise ValueError("Manifesto incompatível; execute download-model.")
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.path, local_files_only=True, trust_remote_code=False

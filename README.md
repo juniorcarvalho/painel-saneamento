@@ -278,7 +278,9 @@ make setup
 make download-model  # requer internet apenas na preparação
 make dev
 make test             # testes com modelos falsos, sem download
-.venv/bin/python scripts/verificar_llm.py  # avaliação real offline
+.venv/bin/python scripts/verificar_llm.py             # avaliação real offline do padrão (Qwen3-0.6B)
+.venv/bin/python scripts/baixar_modelo.py --todos     # opcional: baixa Qwen3-0.6B e Qwen2.5-1.5B-Instruct
+.venv/bin/python scripts/verificar_llm.py --comparar  # opcional: comparação empírica offline dos dois candidatos
 ```
 
 Python 3.14.2 teve instalação e testes verificados. `PYTHON` e `VENV` configuram
