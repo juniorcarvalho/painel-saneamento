@@ -106,3 +106,33 @@ def test_resposta_vazia_vira_erro():
     ag = agente([AIMessage(content="")])
     with pytest.raises(ExternalServiceError, match="vazia"):
         svc.perguntar(ag, "oi", "thread-aaaa")
+
+
+def _erro_parsing():
+    return openai.BadRequestError(
+        "Error code: 400 - Parsing failed. The model generated output that could not be parsed.",
+        response=httpx.Response(400, request=REQ), body=None,
+    )
+
+
+def test_repete_quando_modelo_gera_chamada_malformada():
+    class Instavel:
+        chamadas = 0
+
+        def invoke(self, *a, **k):
+            Instavel.chamadas += 1
+            if Instavel.chamadas < 3:
+                raise _erro_parsing()
+            return {"messages": [AIMessage(content="ok")]}
+
+    assert svc.perguntar(Instavel(), "oi", "thread-aaaa").texto == "ok"
+    assert Instavel.chamadas == 3
+
+
+def test_falha_de_geracao_persistente_vira_erro_do_provedor():
+    class Sempre:
+        def invoke(self, *a, **k):
+            raise _erro_parsing()
+
+    with pytest.raises(ExternalServiceError, match="Parsing failed"):
+        svc.perguntar(Sempre(), "oi", "thread-aaaa")

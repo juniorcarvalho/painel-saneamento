@@ -102,11 +102,28 @@ def _mensagem_limite(exc: openai.RateLimitError) -> str:
     return f"{texto}. Tente novamente em instantes."
 
 
+TENTATIVAS_GERACAO = 3
+
+
+def _falha_de_geracao(exc: openai.APIStatusError) -> bool:
+    """O provedor devolve 400 quando o modelo gera uma chamada de ferramenta malformada (falha transitória)."""
+    return exc.status_code == 400 and "Parsing failed" in str(exc)
+
+
+def _invocar(agent, mensagem: str, config: dict):
+    for tentativa in range(1, TENTATIVAS_GERACAO + 1):
+        try:
+            return agent.invoke({"messages": [{"role": "user", "content": mensagem}]}, config=config)
+        except openai.BadRequestError as exc:
+            if not _falha_de_geracao(exc) or tentativa == TENTATIVAS_GERACAO:
+                raise
+
+
 def perguntar(agent, mensagem: str, thread_id: str) -> RespostaAgente:
     """O thread_id seleciona o histórico (memória) da conversa."""
     config = {"configurable": {"thread_id": thread_id}}
     try:
-        resultado = agent.invoke({"messages": [{"role": "user", "content": mensagem}]}, config=config)
+        resultado = _invocar(agent, mensagem, config)
     except openai.AuthenticationError as exc:
         raise ExternalServiceError("Chave da API inválida (GROQ_API_KEY).") from exc
     except openai.RateLimitError as exc:
