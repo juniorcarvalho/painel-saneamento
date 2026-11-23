@@ -1,3 +1,7 @@
+import io
+import json
+from urllib.error import HTTPError
+
 import pytest
 from src import api_client as client
 
@@ -14,9 +18,6 @@ def test_timeout(monkeypatch):
 
 
 def test_sucesso_caminhos_timeouts_e_proveniencia(monkeypatch):
-    import io
-    import json
-
     fonte = {'titulo': 'Teste', 'origem': 'Documento local'}
     entrada = {'texto': 'Texto de exemplo para resumir.', 'fonte': fonte}
     resumo = {'texto_processado': entrada['texto'], 'tipo_analise': 'resumo', 'resultado': 'Resumo.', 'modelo': 'teste', 'revisao': 'abc', 'fonte': fonte, 'tempo_processamento_ms': 10}
@@ -49,10 +50,6 @@ def test_sucesso_caminhos_timeouts_e_proveniencia(monkeypatch):
     (500, 'Falha interna'),
 ])
 def test_erros_http_estruturados(monkeypatch, status, detail):
-    import io
-    import json
-    from urllib.error import HTTPError
-
     chamadas = []
 
     def falhar(request, timeout):
@@ -64,3 +61,29 @@ def test_erros_http_estruturados(monkeypatch, status, detail):
         client.processar_texto({})
     assert str(detail) in str(erro.value)
     assert len(chamadas) == 1
+
+
+def test_perguntar_agente_contrato(monkeypatch):
+    resposta = {'resposta': 'ok', 'passos': [], 'modelo': 'm', 'thread_id': 'thread-12345678', 'tempo_processamento_ms': 5}
+    chamadas = []
+    monkeypatch.setattr(client, '_requisicao', lambda *a, **k: chamadas.append((a, k)) or resposta)
+    assert client.perguntar_agente('Olá', 'thread-12345678').resposta == 'ok'
+    assert chamadas[0][1]['caminho'] == '/agente' and chamadas[0][1]['timeout'] > 30
+    monkeypatch.setattr(client, '_requisicao', lambda *a, **k: {'resposta': 'x'})
+    with pytest.raises(client.APIError):
+        client.perguntar_agente('Olá', 'thread-12345678')
+
+
+def test_limpar_conversa_usa_delete(monkeypatch):
+    chamadas = []
+
+    class Resp(io.BytesIO):
+        status = 204
+
+    def abrir(request, timeout):
+        chamadas.append(request)
+        return Resp(b'')
+
+    monkeypatch.setattr(client, 'urlopen', abrir)
+    assert client.limpar_conversa('thread-12345678') is None
+    assert chamadas[0].method == 'DELETE' and chamadas[0].full_url.endswith('/agente/thread-12345678')

@@ -249,3 +249,21 @@ com uma fonte necessária que dependa de interação ou carregamento dinâmico.
 
 ## TP4 — resumo local
 Textos de saneamento são fornecidos pelo usuário com título e origem declarados. Qwen3-0.6B gera resumos sem persistência de textos ou respostas no servidor. Limites padrão: 50–8000 caracteres, 2048 tokens de prompt e 256 tokens novos. A fonte não é consultada automaticamente. Os indicadores e o score determinístico permanecem independentes do resumo.
+
+
+## 12. TP5 — Ciclo completo dos dados até o insight
+
+| Fonte | Integração | Onde é consumida | Limitações |
+| --- | --- | --- | --- |
+| SNIS / Base dos Dados (CSV municipal) | `processar_csv_local` agrega por UF e ano, ponderando pela população | Score, ranking, ferramentas do agente, painel | Cobertura urbana; 2022 sem campos urbanos, logo o último ano válido é 2021 |
+| Wikipédia (Beautiful Soup) | Scraping opcional, com amostra no repositório | Referência na metodologia | Sem participação no score nem nas ferramentas |
+| IBGE SIDRA (API) | Integração opcional (`consolidar_dados_api`) | Fora do pipeline principal | Opcional; depende de rede |
+| Importação complementar (`POST /dados`) | Lote persistido com `Origem` e `Importado_Em` | Exploração e `GET /dados`; **excluída** das ferramentas do agente (só `Origem == "oficial"`) | Pode repetir UF e ano |
+
+Fluxo: coleta → `processar_csv_local` → `dados_saneamento.json` →
+`calcular_prioridade` → `montar_registros` → ferramentas (`src/agent_tools.py`)
+→ agente (`src/agent_service.py`) → `POST /agente` → painel e página do agente.
+
+As ferramentas devolvem JSON com os números e `ERRO:` quando faltam dados; o
+LLM não os recalcula. Os 723 registros oficiais e o score determinístico
+permanecem como no TP2/TP3.

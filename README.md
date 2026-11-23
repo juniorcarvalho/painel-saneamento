@@ -5,6 +5,20 @@ priorização de investimentos em saneamento urbano por Unidade Federativa.
 Os dados municipais do SNIS são agregados por UF e ano. A prioridade combina
 40% do déficit de água e 60% do déficit de esgoto.
 
+O projeto também integra dois usos de LLM: um **agente de decisão** (Groq) com
+ferramentas determinísticas e memória de conversa, e um **resumo de textos** com
+modelo local (Qwen3-0.6B). Nenhum deles altera o score de prioridade.
+
+| Caminho | Conteúdo |
+| --- | --- |
+| `app.py`, `pages/` | Painel Streamlit (6 páginas) |
+| `src/api.py` | API FastAPI (`/dados`, `/processar_texto`, `/agente`) |
+| `src/agent_*.py` | Agente: configuração, ferramentas, serviço e contratos |
+| `src/llm_*.py` | Resumo local com Qwen |
+| `src/data_*.py`, `src/api_data_access.py` | Coleta, agregação, score e dados complementares |
+| `tests/` | Testes sem rede, sem chave e sem download de modelos |
+| `docs/` | `project_charter.md`, `data_summary.md`, `agente.md`, `llm_local.md` |
+
 ## Instalação local
 
 Use Python 3.11 ou superior (incluindo 3.14). Os comandos abaixo são para
@@ -33,7 +47,9 @@ python -m pip install -r requirements.txt
 ```
 
 Se o ambiente já existir, basta ativá-lo e atualizar as dependências com o
-mesmo comando de instalação. FastAPI e Uvicorn estão incluídos no arquivo.
+mesmo comando de instalação. FastAPI, Uvicorn, LangChain/LangGraph e as
+bibliotecas do modelo local estão incluídos no arquivo. A primeira instalação
+baixa o PyTorch (CPU) e é demorada.
 
 ## Preparação dos dados
 
@@ -121,6 +137,8 @@ Outros comandos disponíveis:
 | `make web` | Iniciar somente o painel; requer API em execução |
 | `make data` | Regenerar o cache oficial a partir do CSV municipal local |
 | `make scrape` | Executar a coleta opcional da Wikipédia |
+| `make download-model` | Baixar o modelo local do resumo (Qwen3-0.6B) |
+| `make test` | Executar os testes (sem rede e sem chave) |
 
 Também é possível iniciar os serviços manualmente em dois terminais, ambos
 na raiz do projeto:
@@ -161,14 +179,20 @@ Streamlit, portanto deve ser alcançável a partir do ambiente onde ele executa.
 
 ## Navegação e uso
 
-O menu lateral possui três páginas:
+O menu lateral possui seis páginas:
 
+- **Painel ESG (inicial):** ciclo coleta → processamento → análise → IA, KPIs do
+  último ano, evolução nacional, Top 5 de prioridade e o botão "Gerar
+  recomendações com IA" (requer `GROQ_API_KEY`).
 - **Exploração e ranking:** ano, região, origem, ordenação, métricas, gráfico
   identificado por UF, tabela e exportação dos registros filtrados.
+- **Agente de decisão (IA):** chat com memória por conversa, sugestões de
+  perguntas e a explicação "Como o agente chegou a isso" (ferramentas e dados).
+- **Resumo com IA local:** resumo de textos com o Qwen3-0.6B.
 - **Consulta e importação:** GET filtrado na API, download CSV, validação e
   prévia de upload, seguido de envio explícito de um lote via POST.
 - **Metodologia e fontes:** regra de prioridade, limitações, proveniência,
-  referência municipal local e preparação conceitual para uma futura LLM.
+  referência municipal local, resumo local e agente.
 
 A exploração inicia com origem oficial. Dados complementares podem repetir
 UF/ano e alterar médias e somas quando incluídos. A interface informa essa
@@ -236,6 +260,9 @@ retorna somente os registros recém-importados no mesmo envelope do GET.
 | Cache oficial ausente no GET | 503 |
 | Arquivo inválido ou falha de leitura/escrita | 500 |
 
+Os endpoints `POST /processar_texto` e `POST /agente` (e `DELETE /agente/{thread_id}`)
+têm contratos próprios, descritos nas seções de IA abaixo e em `/docs`.
+
 Os lotes são acrescentados em `data/processed/dados_complementares.json`.
 Arquivo ausente representa uma lista vazia; arquivo corrompido provoca erro,
 sem descarte silencioso. O POST não modifica `dados_saneamento.json`.
@@ -264,14 +291,39 @@ combinações sem denominadores válidos são descartadas. A prévia mostra o
 resultado consolidado. CSVs exportados podem ser reimportados: somente os
 sete campos de entrada são enviados; score e origem são recalculados.
 
-## Uso de LLM
+## Agente de decisão (Groq)
 
-Codex modelo Sol 6.1 para revisao do código e geração da documentação
+A página **Agente de decisão (IA)** e o botão "Gerar recomendações com IA" do **Painel ESG**
+usam um agente ReAct (Groq, `openai/gpt-oss-20b`) com ferramentas determinísticas sobre o SNIS.
+Detalhes e prompt em [`docs/agente.md`](docs/agente.md).
+
+```sh
+cp .env.example .env   # preencha GROQ_API_KEY
+make dev               # API + painel; a API lê o .env ao iniciar
+```
+
+Sem a chave, o painel e as demais páginas funcionam; a API responde 503 em `POST /agente`
+e a página do agente orienta a configuração. A memória da conversa é mantida em RAM por
+`thread_id` (`DELETE /agente/{thread_id}` a descarta) e se perde ao reiniciar a API.
+Só a pergunta e as saídas agregadas das ferramentas são enviadas à Groq.
+
+Configuração no `.env` (modelo em `.env.example`): `GROQ_API_KEY`, `MODEL_NAME`
+(padrão `openai/gpt-oss-20b`), `GROQ_BASE_URL`, `LLM_TEMPERATURE` e `HTTP_TIMEOUT`
+(o cliente do Streamlit espera `HTTP_TIMEOUT` + 30 s).
+
+Rota `POST /agente` (`{"mensagem": "...", "thread_id": "..."}`): 200 com `resposta`, `passos`
+(ferramenta, entrada e saída), `modelo` e `tempo_processamento_ms`; 422 entrada inválida;
+429 limite do provedor; 502 falha do provedor ou resposta vazia do modelo; 503 agente não
+configurado; 500 falha interna (a mensagem sugere um novo `thread_id`).
+
+**Limite do plano gratuito da Groq:** cerca de 8000 tokens por minuto para o `gpt-oss-20b`.
+Conversas longas ou respostas com séries históricas podem retornar 429; aguarde alguns
+segundos e reenvie, ou inicie uma "Nova conversa", que zera o histórico e reduz o consumo.
+Se o modelo devolver uma resposta vazia (acontece ocasionalmente), a API responde 502; reenvie a pergunta.
 
 ## Resumo com IA local
 
-A quarta página, **Resumo com IA local**, usa Qwen3-0.6B via POST `/processar_texto`.
-É independente do uso de Codex no desenvolvimento e não altera o ranking.
+A página **Resumo com IA local**, usa Qwen3-0.6B via POST `/processar_texto`.
 
 ```sh
 make setup
@@ -283,25 +335,16 @@ make test             # testes com modelos falsos, sem download
 .venv/bin/python scripts/verificar_llm.py --comparar  # opcional: comparação empírica offline dos dois candidatos
 ```
 
-Python 3.14.2 teve instalação e testes verificados. `PYTHON` e `VENV` configuram
-um ambiente novo no Makefile (ex.: `make setup PYTHON=python3.12 VENV=.venv312`).
-Use um único worker da API. Pesos ficam em `models/qwen3-0.6b/`, fora do Git.
-`SANEAMENTO_LLM_PATH` muda esse diretório; `SANEAMENTO_LLM_TIMEOUT_SECONDS`
-(padrão 120, intervalo 1–3600) e `SANEAMENTO_LLM_MAX_INPUT_TOKENS`
-(padrão 2048, intervalo 128–8192) configuram limites. Configure o mesmo prazo
-na API e no Streamlit; o cliente adiciona 15 segundos ao timeout.
+## Testes
 
 ```sh
-curl http://127.0.0.1:8000/processar_texto -H 'Content-Type: application/json' \
-  -d '{"texto":"Em 2021, a cidade ampliou a rede de água para 200 famílias.","fonte":{"titulo":"Exemplo","origem":"Documento local"}}'
+make test
 ```
 
-A fonte exige apenas título e origem. Esses metadados são preservados na resposta.
+Cobre ferramentas do agente (dados sintéticos), agente com modelo falso (passos,
+memória por `thread_id`, erros do provedor), rotas da API, cliente HTTP e páginas
+Streamlit. Não requer rede, `GROQ_API_KEY` nem download de modelos.
 
-A resposta contém `texto_processado`, `tipo_analise`, `resultado`, `modelo`,
-`revisao`, `fonte` e `tempo_processamento_ms`. Erros usam `detail`: 422 para
-entrada inválida, 503 para modelo ausente/ocupado, 504 para prazo excedido e
-500 para falha interna. Modelo ausente não impede acesso a `/dados`.
-O startup não baixa arquivos e usa `HF_HUB_OFFLINE=1`. Textos e resumos não
-são gravados pelo servidor; o último resultado permanece na sessão da interface.
-Veja [configuração e avaliação](docs/llm_local.md).
+# Uso de IA
+
+Usado claude code modelo opus 5.5 para planejamento das tarefas e revisão do que foi implementado

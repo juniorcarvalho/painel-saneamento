@@ -4,12 +4,16 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
+from uuid import uuid4
 
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Path, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.agent_config import ConfigError, ExternalServiceError, LimiteExcedido, get_settings
+from src.agent_schemas import PassoSaida, PerguntaEntrada, RespostaAgenteSaida
+from src.agent_service import build_agent, perguntar
 from src.llm_schemas import TextoEntrada, TextoResposta
 from src.llm_service import (
     EntradaLonga,
@@ -18,9 +22,9 @@ from src.llm_service import (
     ServicoResumoLocal,
     TempoExcedido,
 )
-from src.api_data_access import adicionar_dados_complementares, carregar_dados_complementares
+from src.api_data_access import adicionar_dados_complementares, carregar_dados_complementares, montar_registros
 from src.data_access import carregar_dados_processados
-from src.data_processing import calcular_prioridade, normalizar_registros
+from src.data_processing import normalizar_registros
 
 logger = logging.getLogger(__name__)
 Regiao = Literal["Norte", "Nordeste", "Sudeste", "Sul", "Centro-Oeste"]
@@ -60,6 +64,15 @@ class DadosResposta(BaseModel):
 @asynccontextmanager
 async def lifespan(app):
     app.state.llm = None
+    app.state.agente = None
+    app.state.modelo_agente = None
+    try:
+        app.state.agente = build_agent()
+        app.state.modelo_agente = get_settings().model_name
+    except ConfigError as exc:
+        logger.warning("Agente desativado: %s", exc)
+    except Exception:
+        logger.exception("Agente indisponível no carregamento")
     try:
         servico = ServicoResumoLocal()
         servico.carregar()
@@ -73,7 +86,7 @@ async def lifespan(app):
             app.state.llm.fechar()
 
 
-app = FastAPI(lifespan=lifespan, title="Saneamento em Foco", version="3.0.0", description="Consulta de indicadores urbanos e importação complementar, com proveniência explícita.")
+app = FastAPI(lifespan=lifespan, title="Saneamento em Foco", version="4.0.0", description="Consulta de indicadores urbanos e importação complementar, com proveniência explícita.")
 
 
 @app.exception_handler(RequestValidationError)
@@ -93,16 +106,7 @@ def consultar_dados(
 ):
     """Consulta dados oficiais e complementares sem executar coleta externa."""
     try:
-        payload = carregar_dados_processados()
-        fontes = payload.get("fontes", [])
-        if not isinstance(fontes, list) or any(not isinstance(fonte, str) for fonte in fontes):
-            raise ValueError("Fontes inválidas no cache oficial.")
-        oficiais = calcular_prioridade(payload["registros"])
-        for item in oficiais:
-            item["Origem"] = "oficial"
-            item.pop("Importado_Em", None)
-        complementares = carregar_dados_complementares()
-        registros = calcular_prioridade(oficiais + complementares)
+        fontes, registros = montar_registros(carregar_dados_processados, carregar_dados_complementares)
         resposta = DadosResposta(fontes=fontes, registros=registros)
     except FileNotFoundError as exc:
         raise HTTPException(503, "Cache oficial ausente. Execute a preparação dos dados.") from exc
@@ -164,3 +168,47 @@ def processar_texto(entrada: TextoEntrada):
         raise HTTPException(500, "Falha interna ao gerar resumo.") from exc
     finally:
         logger.info("Processamento de resumo encerrado em %.3fs", time.monotonic() - inicio)
+
+
+@app.post(
+    "/agente",
+    response_model=RespostaAgenteSaida,
+    responses={
+        422: {"description": "Entrada inválida"},
+        429: {"description": "Limite de requisições do provedor"},
+        502: {"description": "Falha do provedor de LLM"},
+        503: {"description": "Agente não configurado"},
+        500: {"description": "Falha interna"},
+    },
+)
+def consultar_agente(entrada: PerguntaEntrada):
+    inicio = time.monotonic()
+    agente = getattr(app.state, "agente", None)
+    if agente is None:
+        raise HTTPException(503, "Configure GROQ_API_KEY no .env e reinicie a API.")
+    try:
+        resposta = perguntar(agente, entrada.mensagem, entrada.thread_id)
+    except LimiteExcedido as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except ExternalServiceError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Falha interna no agente")
+        novo = uuid4().hex
+        raise HTTPException(500, f"Falha interna no agente. Inicie uma nova conversa (thread_id sugerido: {novo}).") from exc
+    return RespostaAgenteSaida(
+        resposta=resposta.texto,
+        passos=[PassoSaida(ferramenta=p.ferramenta, entrada=p.entrada, saida=p.saida) for p in resposta.passos],
+        modelo=getattr(app.state, "modelo_agente", None) or get_settings().model_name,
+        thread_id=entrada.thread_id,
+        tempo_processamento_ms=int((time.monotonic() - inicio) * 1000),
+    )
+
+
+@app.delete("/agente/{thread_id}", status_code=204, responses={503: {"description": "Agente não configurado"}})
+def limpar_agente(thread_id: Annotated[str, Path(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")]):
+    """Descarta a memória de uma conversa."""
+    agente = getattr(app.state, "agente", None)
+    if agente is None:
+        raise HTTPException(503, "Configure GROQ_API_KEY no .env e reinicie a API.")
+    agente.checkpointer.delete_thread(thread_id)

@@ -1,5 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
 import pytest
 import torch
+from src import llm_service
+from src.llm_config import CANDIDATO_MODELO, CANDIDATO_REVISAO, MODELO, REVISAO, resolver_modelo
 from src.llm_service import ServicoResumoLocal, EntradaLonga, TempoExcedido, Ocupado
 
 class Tokenizer:
@@ -35,8 +40,6 @@ def test_inferencia_e_trava():
 
 
 def test_prazo_cooperativo(monkeypatch):
-    from src import llm_service
-
     agora = [100.0]
     monkeypatch.setattr(llm_service.time, 'monotonic', lambda: agora[0])
     s = ServicoResumoLocal()
@@ -58,9 +61,6 @@ def test_prazo_cooperativo(monkeypatch):
 
 
 def test_concorrencia_mantem_trava_ate_terminar():
-    from concurrent.futures import ThreadPoolExecutor
-    from threading import Event
-
     iniciou, terminar = Event(), Event()
     s = ServicoResumoLocal()
     s.tokenizer = Tokenizer()
@@ -88,8 +88,6 @@ def test_concorrencia_mantem_trava_ate_terminar():
 
 
 def test_catalogo_e_resolucao_de_modelos(monkeypatch, tmp_path):
-    from src.llm_config import CANDIDATO_MODELO, CANDIDATO_REVISAO, MODELO, REVISAO, resolver_modelo
-
     m, r, p = resolver_modelo()
     assert (m, r) == (MODELO, REVISAO)
     assert p.name == 'qwen3-0.6b'

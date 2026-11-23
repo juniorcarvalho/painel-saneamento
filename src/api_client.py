@@ -6,12 +6,18 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from src.agent_schemas import RespostaAgenteSaida
 from src.llm_schemas import TextoResposta
 from src.llm_config import opcao
 
 
 class APIError(RuntimeError):
     """Falha de conexão, contrato ou validação na API."""
+
+    def __init__(self, mensagem, status=None, timeout=False):
+        super().__init__(mensagem)
+        self.status = status
+        self.timeout = timeout
 
 
 def _requisicao(method: str, registros=None, filtros=None, caminho="/dados", timeout=15):
@@ -23,6 +29,8 @@ def _requisicao(method: str, registros=None, filtros=None, caminho="/dados", tim
     try:
         request = Request(url, data=body, method=method, headers={"Accept": "application/json", "Content-Type": "application/json"})
         with urlopen(request, timeout=timeout) as response:
+            if getattr(response, "status", 200) == 204:
+                return None
             payload = json.load(response)
         return payload
     except HTTPError as exc:
@@ -31,9 +39,9 @@ def _requisicao(method: str, registros=None, filtros=None, caminho="/dados", tim
             detalhe = erro.get("detail", "Erro sem detalhes.") if isinstance(erro, dict) else "Erro sem detalhes."
         except (ValueError, UnicodeError):
             detalhe = "Erro sem detalhes."
-        raise APIError(f"API retornou HTTP {exc.code}: {detalhe}") from exc
+        raise APIError(f"API retornou HTTP {exc.code}: {detalhe}", status=exc.code) from exc
     except TimeoutError as exc:
-        raise APIError("Tempo de transporte excedido. O processamento pode ainda estar terminando; não reenvie automaticamente.") from exc
+        raise APIError("Tempo de transporte excedido. O processamento pode ainda estar terminando; não reenvie automaticamente.", timeout=True) from exc
     except (URLError, OSError) as exc:
         raise APIError("API indisponível. Verifique se o serviço FastAPI está em execução.") from exc
     except (ValueError, UnicodeError) as exc:
@@ -60,3 +68,23 @@ def processar_texto(entrada):
         return TextoResposta.model_validate(_requisicao('POST', registros=entrada, caminho='/processar_texto', timeout=timeout))
     except ValueError as exc:
         raise APIError('Resposta ou configuração de resumo inválida.') from exc
+
+
+def _timeout_agente():
+    try:
+        # pior caso do servidor: ~4 chamadas ao LLM, cada uma com 1 tentativa + 2 retentativas
+        return float(os.getenv('HTTP_TIMEOUT', '30')) * 4 + 30
+    except ValueError:
+        return 150.0
+
+
+def perguntar_agente(mensagem, thread_id):
+    payload = _requisicao('POST', registros={'mensagem': mensagem, 'thread_id': thread_id}, caminho='/agente', timeout=_timeout_agente())
+    try:
+        return RespostaAgenteSaida.model_validate(payload)
+    except ValueError as exc:
+        raise APIError('Resposta do agente fora do contrato.') from exc
+
+
+def limpar_conversa(thread_id):
+    _requisicao('DELETE', caminho=f'/agente/{thread_id}', timeout=15)

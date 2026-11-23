@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Lock
 
-from src.data_access import PROJECT_ROOT
+from src.data_access import PROJECT_ROOT, carregar_dados_processados
 from src.data_processing import calcular_prioridade
 
 COMPLEMENTARY_PATH = PROJECT_ROOT / "data" / "processed" / "dados_complementares.json"
@@ -52,3 +52,20 @@ def adicionar_dados_complementares(
             if temporario is not None:
                 temporario.unlink(missing_ok=True)
     return novos
+
+
+def montar_registros(carregar_oficiais=None, carregar_complementares=None) -> tuple[list[str], list[dict]]:
+    """Carrega o cache oficial e os lotes complementares, com Origem e prioridade.
+
+    Os carregadores são injetáveis para que a API e os testes usem as próprias funções.
+    """
+    payload = (carregar_oficiais or carregar_dados_processados)()
+    fontes = payload.get("fontes", [])
+    if not isinstance(fontes, list) or any(not isinstance(fonte, str) for fonte in fontes):
+        raise ValueError("Fontes inválidas no cache oficial.")
+    oficiais = calcular_prioridade(payload["registros"])
+    for item in oficiais:
+        item["Origem"] = "oficial"
+        item.pop("Importado_Em", None)
+    complementares = (carregar_complementares or carregar_dados_complementares)()
+    return fontes, calcular_prioridade(oficiais + complementares)

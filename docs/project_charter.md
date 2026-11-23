@@ -98,7 +98,7 @@ Score de prioridade =
 
 Os déficits são calculados como `100 - cobertura`. A população sem saneamento é
 exibida como impacto absoluto e usada como critério de desempate. O painel não
-gera recomendações textuais por IA.
+gera recomendações textuais por IA até o TP4; no TP5, o agente (seção 11) as redige sem alterar o score.
 
 # 6. Metas e Indicadores
 
@@ -221,3 +221,58 @@ preservação do cache oficial e navegação com API indisponível.
 
 ## TP4 — resumo local
 Textos de saneamento são fornecidos pelo usuário com título e origem declarados. Qwen3-0.6B gera resumos sem persistência de textos ou respostas no servidor. Limites padrão: 50–8000 caracteres, 2048 tokens de prompt e 256 tokens novos. A fonte não é consultada automaticamente. Os indicadores e o score determinístico permanecem independentes do resumo.
+
+
+# 11. TP5 — Agente inteligente e dashboard final
+
+## Alinhamento entre dados, IA e engenharia de prompts
+
+A pergunta de negócio permanece: "Quais Unidades Federativas apresentam os
+maiores déficits urbanos de água e esgoto e devem ser priorizadas para
+alocação de recursos?". O TP5 a responde de ponta a ponta: os **dados**
+(723 registros SNIS por UF e ano, 1995–2021) alimentam **ferramentas
+determinísticas**; um **agente** de IA as orquestra e redige recomendações; e a
+**engenharia de prompts** (`docs/agente.md`) impõe papel, formato
+(Diagnóstico → Evidência → Recomendação → Limitações) e a proibição de inventar
+números. O painel final mostra o ciclo coleta → processamento → análise → IA.
+
+## Por que a Opção 3 (agentes) e não as Opções 1 e 2
+
+- O ativo do projeto são **indicadores estruturados**, não um corpus textual.
+  Sumarizar relatórios (Opção 2) já existe no TP4, com texto colado pelo usuário.
+- Um agente com ferramentas automatiza a análise dos indicadores e sugere
+  recomendações com base em um benchmark de governança: a universalização de
+  2033 do Marco Legal do Saneamento (Lei 14.026/2020; 99% água, 90% esgoto).
+- A memória conversacional (Opção 1) vem sem custo extra: a memória por
+  `thread_id` do LangGraph permite perguntas de acompanhamento ("E só no Nordeste?").
+
+## Groq/`gpt-oss-20b` em vez do Qwen local
+
+O agente exige *tool calling* confiável, que o Qwen3-0.6B em CPU não entrega
+com latência aceitável (limites documentados em `docs/llm_local.md`). A Groq,
+via API compatível com OpenAI, oferece tool calling, baixa latência e custo
+zero no plano gratuito. O resumo local do TP4 permanece como está.
+
+## ODS e pilares ESG
+
+- ODS 6.1 e 6.2: cobertura de água e esgoto; o benchmark de 2033 operacionaliza as metas.
+- **G (governança):** priorizar a alocação de recurso público com critério transparente e rastreável.
+- **E/S (ambiental e social):** saúde, dignidade e proteção de corpos hídricos.
+
+## Metas e indicadores adicionais
+
+- Toda resposta do agente deve citar números retornados por ferramentas, e a
+  interface expõe os passos e os dados usados ("Como o agente chegou a isso").
+- As 4 perguntas sugeridas e 2 perguntas capciosas são validadas contra o
+  `GET /dados` (`docs/agente.md`).
+- `make test` roda sem rede e sem chave.
+
+## Riscos adicionais
+
+| Risco | Mitigação |
+| --- | --- |
+| Indisponibilidade ou limite de taxa da Groq | Erros 502/429 com mensagem clara; o restante do painel funciona sem o agente |
+| Alucinação de números | O LLM não calcula: usa ferramentas; o prompt proíbe inventar; os dados da ferramenta ficam visíveis |
+| Envio de dados a terceiros | Só a pergunta e saídas agregadas das ferramentas saem da máquina; sem dados pessoais; chave no `.env` |
+| Chave ausente | A API sobe sem o agente; `POST /agente` responde 503 e a página orienta a configuração |
+| Memória volátil | `InMemorySaver` perde o histórico ao reiniciar a API; "Nova conversa" descarta o thread |

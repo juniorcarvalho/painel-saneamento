@@ -20,3 +20,4 @@ entrega-pdf/
 
 models/
 .pytest_cache/
+!.env.example
