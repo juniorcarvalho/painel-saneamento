@@ -1,5 +1,6 @@
 """Agente ReAct (Groq) com memória por thread, usando as ferramentas determinísticas."""
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -81,6 +82,26 @@ def _extrair_passos(messages: list[Any]) -> list[Passo]:
     return list(passos.values())
 
 
+LIMITES = {
+    "TPD": "diário de tokens",
+    "TPM": "de tokens por minuto",
+    "RPD": "diário de requisições",
+    "RPM": "de requisições por minuto",
+}
+
+
+def _mensagem_limite(exc: openai.RateLimitError) -> str:
+    """Traduz o corpo do 429 do provedor em tipo de limite e tempo de espera."""
+    corpo = exc.body if isinstance(exc.body, dict) else {}
+    detalhe = str(corpo.get("message", ""))
+    tipo = re.search(r"\((TPD|TPM|RPD|RPM)\)", detalhe)
+    espera = re.search(r"try again in (\d[\w.]*\w)", detalhe)
+    texto = f"Limite {LIMITES[tipo.group(1)]} do provedor atingido" if tipo else "Limite de requisições do provedor atingido"
+    if espera:
+        return f"{texto}. Tente novamente em {espera.group(1)}."
+    return f"{texto}. Tente novamente em instantes."
+
+
 def perguntar(agent, mensagem: str, thread_id: str) -> RespostaAgente:
     """O thread_id seleciona o histórico (memória) da conversa."""
     config = {"configurable": {"thread_id": thread_id}}
@@ -89,7 +110,7 @@ def perguntar(agent, mensagem: str, thread_id: str) -> RespostaAgente:
     except openai.AuthenticationError as exc:
         raise ExternalServiceError("Chave da API inválida (GROQ_API_KEY).") from exc
     except openai.RateLimitError as exc:
-        raise LimiteExcedido("Limite de requisições do provedor atingido. Tente novamente em instantes.") from exc
+        raise LimiteExcedido(_mensagem_limite(exc)) from exc
     except openai.APIConnectionError as exc:
         raise ExternalServiceError("Não foi possível conectar ao provedor do LLM.") from exc
     except openai.APIError as exc:

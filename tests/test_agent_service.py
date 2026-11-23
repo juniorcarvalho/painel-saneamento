@@ -80,6 +80,21 @@ def test_mapeamento_excecoes(erro, esperado):
         svc.perguntar(Quebrado(), "oi", "thread-aaaa")
 
 
+@pytest.mark.parametrize("corpo,esperado", [
+    ({"message": "Rate limit reached ... on tokens per day (TPD): Limit 200000. Please try again in 3m52.848s."}, "Limite diário de tokens do provedor atingido. Tente novamente em 3m52.848s."),
+    ({"message": "Rate limit reached ... on tokens per minute (TPM): Limit 8000. Please try again in 2.5s."}, "Limite de tokens por minuto do provedor atingido. Tente novamente em 2.5s."),
+    (None, "Limite de requisições do provedor atingido. Tente novamente em instantes."),
+])
+def test_mensagem_de_limite_detalhada(corpo, esperado):
+    class Limitado:
+        def invoke(self, *a, **k):
+            raise openai.RateLimitError("x", response=httpx.Response(429, request=REQ), body=corpo)
+
+    with pytest.raises(LimiteExcedido) as info:
+        svc.perguntar(Limitado(), "oi", "thread-aaaa")
+    assert str(info.value) == esperado
+
+
 def test_chave_ausente(monkeypatch):
     cfg = Settings("", "m", "http://x", 0, 1)
     with pytest.raises(ConfigError):
