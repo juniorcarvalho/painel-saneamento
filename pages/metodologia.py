@@ -24,6 +24,20 @@ st.write("Beautiful Soup é suficiente para o HTML estático da referência muni
 st.subheader("Resumo com LLM local")
 st.write("O Qwen3-0.6B resume textos fornecidos pelo usuário, com proveniência declarada. O limite inicial é 50–8000 caracteres e 2048 tokens no prompt completo. Textos e resumos não são persistidos pelo servidor. A saída pode conter erros e deve ser comparada ao original; não constitui indicador oficial nem altera o score determinístico.")
 
+st.subheader("Agente inteligente (Groq)")
+st.write(
+    "A página \"Agente de decisão\" usa um agente ReAct (LangChain/LangGraph) com o modelo `openai/gpt-oss-20b` na Groq. "
+    "O LLM só escolhe ferramentas e redige o texto; todos os números vêm de ferramentas determinísticas sobre o cache oficial SNIS: "
+    "`ranking_prioridade`, `indicadores_uf`, `evolucao_uf`, `comparar_ufs`, `resumo_regional`, `distancia_meta` e `simular_cenario`. "
+    "A memória da conversa é mantida por `thread_id` no servidor e se perde ao reiniciá-lo."
+)
+st.markdown(
+    "- **Benchmark:** universalização de 2033 do Marco Legal do Saneamento (Lei 14.026/2020), com 99% de água e 90% de esgoto, alinhada às metas 6.1 e 6.2 da ODS 6. O ritmo exigido é comparado à variação média dos últimos 5 anos.\n"
+    "- **Score:** o agente não altera a regra de priorização; `simular_cenario` apenas recalcula uma cópia dos dados.\n"
+    "- **Privacidade:** só a pergunta e as saídas agregadas das ferramentas são enviadas à Groq; não há dados pessoais. A chave fica no `.env` da API.\n"
+    "- **Limitações:** a base termina em 2021, os indicadores são urbanos, o provedor tem limite de taxa e a redação do modelo pode conter imprecisões. Confira os dados exibidos em \"Como o agente chegou a isso\"; a resposta não substitui estudo técnico."
+)
+
 with st.expander("Referência territorial extraída da Wikipédia"):
     try:
         municipios = carregar_referencia_municipios()

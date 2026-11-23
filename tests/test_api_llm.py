@@ -1,8 +1,13 @@
+import json
+from functools import partial
+
 import pytest
 import torch
 from fastapi.testclient import TestClient
 from src import api
-from src.llm_service import Ocupado, TempoExcedido, EntradaLonga
+from src.api_data_access import adicionar_dados_complementares, carregar_dados_complementares
+from src.data_access import carregar_dados_processados
+from src.llm_service import Ocupado, ServicoResumoLocal, TempoExcedido, EntradaLonga
 
 ENTRADA = {'texto': 'Em 2021, a cidade ampliou a rede de água para 200 famílias.', 'fonte': {'titulo': 'Exemplo', 'origem': 'Documento sintético local'}}
 
@@ -57,9 +62,6 @@ def test_post_dados_sem_llm(cliente, monkeypatch):
     (RuntimeError('tensor inválido'), 500),
 ])
 def test_memoria_servico_real(cliente, erro, status):
-    import torch
-    from src.llm_service import ServicoResumoLocal
-
     class Tokenizer:
         def apply_chat_template(self, *args, **kwargs):
             return 'prompt'
@@ -82,11 +84,6 @@ def test_memoria_servico_real(cliente, erro, status):
 
 
 def test_persistencia_dados_com_falha_llm(monkeypatch, tmp_path):
-    import json
-    from functools import partial
-    from src.api_data_access import adicionar_dados_complementares, carregar_dados_complementares
-    from src.data_access import carregar_dados_processados
-
     oficial, complementar = tmp_path / 'oficial.json', tmp_path / 'complementar.json'
     original = json.dumps({'fontes': ['Fixture'], 'registros': []})
     oficial.write_text(original)

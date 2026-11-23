@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 
 import streamlit as st
 
@@ -59,3 +60,36 @@ def csv_bytes(registros):
     writer.writeheader()
     writer.writerows(registros)
     return buffer.getvalue().encode("utf-8-sig")
+
+
+def _tabela_da_saida(saida):
+    """Extrai (chave, registros) do JSON de uma ferramenta, ou None."""
+    try:
+        dados = json.loads(saida)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(dados, dict):
+        return None
+    for chave in ("ranking", "ufs", "regioes", "serie"):
+        if isinstance(dados.get(chave), list) and dados[chave] and all(isinstance(i, dict) for i in dados[chave]):
+            return chave, dados[chave]
+    return None
+
+
+def renderizar_passos(passos):
+    """Mostra ferramenta, entrada e os dados que embasaram a resposta do agente."""
+    for passo in passos:
+        st.markdown(f"**{passo.ferramenta}** `{json.dumps(passo.entrada, ensure_ascii=False)}`")
+        if passo.saida.startswith("ERRO:"):
+            st.warning(passo.saida)
+            continue
+        tabela = _tabela_da_saida(passo.saida)
+        if tabela is None:
+            st.code(passo.saida, language="json")
+            continue
+        chave, linhas = tabela
+        st.dataframe(linhas, width="stretch", hide_index=True)
+        rotulo = "ano" if chave == "serie" else next((c for c in ("sigla", "regiao") if c in linhas[0]), None)
+        colunas = [c for c in ("agua", "esgoto") if c in linhas[0]] if chave == "serie" else [c for c in ("agua", "esgoto") if c in linhas[0]] or [c for c in ("score",) if c in linhas[0]]
+        if rotulo and colunas:
+            st.bar_chart(linhas, x=rotulo, y=colunas)
